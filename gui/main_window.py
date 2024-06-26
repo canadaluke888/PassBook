@@ -4,12 +4,13 @@ import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QListWidget, QListWidgetItem, QDialog, \
-    QLabel, QLineEdit, QHBoxLayout, QMessageBox, QPlainTextEdit
+    QLabel, QLineEdit, QHBoxLayout, QMessageBox
 
 from gui.add_pass_dialog import AddPasswordDialog
 from gui.auth_dialog import AuthDialog
 from encryption.crypto_manager import CryptoManager
 from gui.settings_dialog import SettingsDialog
+from gui.note_dialog import NoteDialog
 
 
 class MainWindow(QMainWindow):
@@ -139,13 +140,44 @@ class MainWindow(QMainWindow):
         self.detail_layout.addWidget(edit_button)
 
         notes_label = QLabel("Notes:")
-        self.notes_input = QPlainTextEdit()
-        self.notes_input.setPlainText(notes)
-        self.notes_input.textChanged.connect(self.save_note)
         self.detail_layout.addWidget(notes_label)
-        self.detail_layout.addWidget(self.notes_input)
+
+        if notes:
+            self.detail_layout.addWidget(QLabel(notes))
+            edit_note_button = QPushButton('Edit Note')
+            edit_note_button.clicked.connect(lambda: self.open_note_dialog(identifier, notes))
+            self.detail_layout.addWidget(edit_note_button)
+        else:
+            add_note_button = QPushButton('Add Note')
+            add_note_button.clicked.connect(lambda: self.open_note_dialog(identifier))
+            self.detail_layout.addWidget(add_note_button)
 
         self.current_identifier = identifier
+
+    def open_note_dialog(self, identifier, note=None):
+        dialog = NoteDialog(parent=self, note=note)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_note = dialog.get_note()
+            self.save_note(identifier, new_note)
+            self.update_password_notes(identifier, new_note)
+            self.display_password_details(self.password_list.currentItem())
+
+    def save_note(self, identifier, note):
+        passwords = {}
+        if os.path.exists(self.passwords_file):
+            with open(self.passwords_file, 'r') as file:
+                passwords = json.load(file)
+        if identifier in passwords:
+            passwords[identifier]['notes'] = note
+            with open(self.passwords_file, 'w') as file:
+                json.dump(passwords, file)
+
+    def update_password_notes(self, identifier, note):
+        for index in range(self.password_list.count()):
+            item = self.password_list.item(index)
+            if item.text() == identifier:
+                item.setData(Qt.ItemDataRole.UserRole + 1, note)
+                break
 
     def copy_password(self, password):
         clipboard = QGuiApplication.clipboard()
@@ -177,18 +209,6 @@ class MainWindow(QMainWindow):
             new_identifier, new_password = dialog.get_password_data()
             self.remove_password_from_storage(identifier)
             self.add_password(new_identifier, new_password)
-
-    def save_note(self):
-        if self.current_identifier:
-            notes = self.notes_input.toPlainText()
-            passwords = {}
-            if os.path.exists(self.passwords_file):
-                with open(self.passwords_file, 'r') as file:
-                    passwords = json.load(file)
-            if self.current_identifier in passwords:
-                passwords[self.current_identifier]['notes'] = notes
-                with open(self.passwords_file, 'w') as file:
-                    json.dump(passwords, file)
 
 
 if __name__ == '__main__':
