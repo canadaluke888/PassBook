@@ -4,7 +4,7 @@ import os
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QListWidget, QListWidgetItem, QDialog, \
-    QLabel, QLineEdit, QHBoxLayout, QMessageBox
+    QLabel, QLineEdit, QHBoxLayout, QMessageBox, QPlainTextEdit
 
 from gui.add_pass_dialog import AddPasswordDialog
 from gui.auth_dialog import AuthDialog
@@ -19,6 +19,8 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
         self.crypto_manager = CryptoManager()
         self.auth_dialog = AuthDialog()
+        self.passwords_file = 'PassBookPassword/passwords.json'
+        self.current_identifier = None
         self.init_ui()
 
     def init_ui(self):
@@ -66,12 +68,13 @@ class MainWindow(QMainWindow):
 
     def load_passwords(self):
         self.password_list.clear()
-        if os.path.exists('PassBookPassword/passwords.json'):
-            with open('PassBookPassword/passwords.json', 'r') as file:
+        if os.path.exists(self.passwords_file):
+            with open(self.passwords_file, 'r') as file:
                 passwords = json.load(file)
-                for identifier, encrypted_password in passwords.items():
+                for identifier, data in passwords.items():
                     item = QListWidgetItem(identifier)
-                    item.setData(Qt.ItemDataRole.UserRole, encrypted_password)
+                    item.setData(Qt.ItemDataRole.UserRole, data['password'])
+                    item.setData(Qt.ItemDataRole.UserRole + 1, data.get('notes', ''))
                     self.password_list.addItem(item)
 
     def open_add_password_dialog(self):
@@ -84,16 +87,17 @@ class MainWindow(QMainWindow):
         encrypted_password = self.crypto_manager.encrypt(password).decode()
         item = QListWidgetItem(identifier)
         item.setData(Qt.ItemDataRole.UserRole, encrypted_password)
+        item.setData(Qt.ItemDataRole.UserRole + 1, '')
         self.password_list.addItem(item)
-        self.save_password(identifier, encrypted_password)
+        self.save_password(identifier, {'password': encrypted_password, 'notes': ''})
 
-    def save_password(self, identifier, encrypted_password):
+    def save_password(self, identifier, data):
         passwords = {}
-        if os.path.exists('PassBookPassword/passwords.json'):
-            with open('PassBookPassword/passwords.json', 'r') as file:
+        if os.path.exists(self.passwords_file):
+            with open(self.passwords_file, 'r') as file:
                 passwords = json.load(file)
-        passwords[identifier] = encrypted_password
-        with open('PassBookPassword/passwords.json', 'w') as file:
+        passwords[identifier] = data
+        with open(self.passwords_file, 'w') as file:
             json.dump(passwords, file)
 
     def search_passwords(self):
@@ -115,6 +119,7 @@ class MainWindow(QMainWindow):
 
         identifier = item.text()
         encrypted_password = item.data(Qt.ItemDataRole.UserRole)
+        notes = item.data(Qt.ItemDataRole.UserRole + 1)
 
         decrypted_password = self.crypto_manager.decrypt(encrypted_password.encode())
 
@@ -133,6 +138,15 @@ class MainWindow(QMainWindow):
         edit_button.clicked.connect(lambda: self.edit_password(identifier, decrypted_password))
         self.detail_layout.addWidget(edit_button)
 
+        notes_label = QLabel("Notes:")
+        self.notes_input = QPlainTextEdit()
+        self.notes_input.setPlainText(notes)
+        self.notes_input.textChanged.connect(self.save_note)
+        self.detail_layout.addWidget(notes_label)
+        self.detail_layout.addWidget(self.notes_input)
+
+        self.current_identifier = identifier
+
     def copy_password(self, password):
         clipboard = QGuiApplication.clipboard()
         clipboard.setText(password)
@@ -149,11 +163,11 @@ class MainWindow(QMainWindow):
 
     def remove_password_from_storage(self, identifier):
         passwords = {}
-        if os.path.exists('PassBookPassword/passwords.json'):
-            with open('PassBookPassword/passwords.json', 'r') as file:
+        if os.path.exists(self.passwords_file):
+            with open(self.passwords_file, 'r') as file:
                 passwords = json.load(file)
         passwords.pop(identifier, None)
-        with open('PassBookPassword/passwords.json', 'w') as file:
+        with open(self.passwords_file, 'w') as file:
             json.dump(passwords, file)
 
     def edit_password(self, identifier, old_password):
@@ -163,6 +177,18 @@ class MainWindow(QMainWindow):
             new_identifier, new_password = dialog.get_password_data()
             self.remove_password_from_storage(identifier)
             self.add_password(new_identifier, new_password)
+
+    def save_note(self):
+        if self.current_identifier:
+            notes = self.notes_input.toPlainText()
+            passwords = {}
+            if os.path.exists(self.passwords_file):
+                with open(self.passwords_file, 'r') as file:
+                    passwords = json.load(file)
+            if self.current_identifier in passwords:
+                passwords[self.current_identifier]['notes'] = notes
+                with open(self.passwords_file, 'w') as file:
+                    json.dump(passwords, file)
 
 
 if __name__ == '__main__':
